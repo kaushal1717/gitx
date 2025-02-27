@@ -2,12 +2,19 @@ import { Pinecone } from "@pinecone-database/pinecone";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import { config } from "dotenv";
 import OpenAI from "openai";
+import { Redis } from "@upstash/redis";
 
 config();
 
+// Initialize OpenAI, Pinecone, and Upstash Redis
 export const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 export const pc = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
+export const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_URL,
+  token: process.env.UPSTASH_REDIS_TOKEN,
+});
 
+// Function to chunk text using LangChain
 export const chunkText = async (text, chunkSize = 8000, chunkOverlap = 200) => {
   const splitter = new RecursiveCharacterTextSplitter({
     chunkSize,
@@ -25,7 +32,7 @@ export const generateEmbeddings = async (textChunks) => {
   for (let i = 0; i < textChunks.length; i++) {
     try {
       const response = await openai.embeddings.create({
-        model: "text-embedding-3-large", // Using latest OpenAI embedding model
+        model: "text-embedding-3-large", // OpenAI embedding model
         input: textChunks[i].pageContent, // Use chunked text content
       });
 
@@ -45,11 +52,10 @@ export const generateEmbeddings = async (textChunks) => {
   return embeddingsArray;
 };
 
+// Ensure Pinecone index exists
 export const ensurePineconeIndex = async (indexName) => {
   try {
     const existingIndexes = await pc.listIndexes();
-
-    // Extract index names properly
     const indexNames = existingIndexes.indexes.map((index) => index.name);
 
     if (!indexNames.includes(indexName)) {
@@ -57,13 +63,10 @@ export const ensurePineconeIndex = async (indexName) => {
 
       await pc.createIndex({
         name: indexName,
-        dimension: 3072, // Match OpenAI's "text-embedding-3-large"
+        dimension: 3072, // Match OpenAI's embedding size
         metric: "cosine",
         spec: {
-          serverless: {
-            cloud: "aws",
-            region: "us-east-1", // Adjust to your Pinecone region
-          },
+          serverless: { cloud: "aws", region: "us-east-1" }, // Adjust region if needed
         },
       });
 
@@ -77,16 +80,24 @@ export const ensurePineconeIndex = async (indexName) => {
   }
 };
 
-// Store embeddings in Pinecone
+// Store embeddings in Pinecone & cache the index in Redis
 export const storeEmbeddingsInPinecone = async (indexName, embeddingsArray) => {
   try {
-    // Ensure the index exists before upserting
+    // Ensure the index exists before storing
     await ensurePineconeIndex(indexName);
 
     const index = pc.index(indexName);
     await index.upsert(embeddingsArray);
 
     console.log("✅ Embeddings stored in Pinecone.");
+
+    // Cache the index in Redis with a 5-minute expiration
+    try {
+      await redis.set(indexName, "cached", { ex: 300 });
+      console.log(`✅ Cached index "${indexName}" in Redis.`);
+    } catch (redisError) {
+      console.warn("⚠️ Failed to cache in Redis:", redisError.message);
+    }
   } catch (error) {
     console.error("Error storing in Pinecone:", error.message);
     throw new Error("Failed to store embeddings in Pinecone");

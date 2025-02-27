@@ -4,6 +4,7 @@ import {
   generateEmbeddings,
   pc,
   storeEmbeddingsInPinecone,
+  redis,
 } from "./utils/helpers.js";
 import { exec } from "child_process";
 import { streamText } from "ai";
@@ -22,7 +23,7 @@ if (!fs.existsSync(tempDir)) {
   fs.mkdirSync(tempDir);
 }
 
-router.post("/process", (req, res) => {
+router.post("/process", async (req, res) => {
   const { repoUrl } = req.body;
   if (!repoUrl)
     return res.status(400).json({ error: "GitHub repo URL is required" });
@@ -31,48 +32,85 @@ router.post("/process", (req, res) => {
   const projectName = repoUrl.split("/")[4]; // Extracts project name from URL
   const outputFilePath = path.join(tempDir, `${projectName}-output.txt`);
 
-  exec(
-    `npx repomix --remote ${repoUrl} -o ${outputFilePath}`,
-    async (error, stdout, stderr) => {
-      if (error) {
-        console.error("Repomix execution failed:", stderr || error.message);
-        return res
-          .status(500)
-          .json({ error: "Repomix failed", details: stderr || error.message });
-      }
-
-      console.log("Repomix completed. Generating embeddings...");
-
-      if (!fs.existsSync(outputFilePath)) {
-        return res.status(500).json({ error: "Output file was not created" });
-      }
-
-      try {
-        const fileContent = fs.readFileSync(outputFilePath, "utf-8");
-
-        // Split the text into chunks using LangChain
-        const textChunks = await chunkText(fileContent);
-
-        // Generate embeddings for each chunk
-        const embeddingsArray = await generateEmbeddings(textChunks);
-
-        // Store embeddings in Pinecone
-        await storeEmbeddingsInPinecone(projectName, embeddingsArray);
-
-        // Delete local file
-        fs.unlinkSync(outputFilePath);
-
-        return res.json({
-          success: true,
-          message: "Processing complete",
-          status: 200,
-        });
-      } catch (processingError) {
-        console.error("Processing error:", processingError.message);
-        return res.status(500).json({ error: processingError.message });
-      }
+  try {
+    // Check if the index already exists in Redis
+    let cached;
+    try {
+      cached = await redis.get(projectName);
+    } catch (redisError) {
+      console.warn(
+        "⚠️ Redis lookup failed, skipping cache check:",
+        redisError.message
+      );
+      cached = null; // If Redis fails, continue without caching
     }
-  );
+
+    if (cached) {
+      console.log(
+        `✅ Cache hit: Embeddings for "${projectName}" exist, skipping creation.`
+      );
+      return res.json({
+        success: true,
+        message: "Embeddings already cached",
+        status: 200,
+      });
+    }
+
+    // Run Repomix to extract code summary
+    exec(
+      `npx repomix --remote ${repoUrl} -o ${outputFilePath}`,
+      async (error, stdout, stderr) => {
+        if (error) {
+          console.error(
+            "❌ Repomix execution failed:",
+            stderr || error.message
+          );
+          return res
+            .status(500)
+            .json({
+              error: "Repomix failed",
+              details: stderr || error.message,
+            });
+        }
+
+        console.log("✅ Repomix completed. Generating embeddings...");
+
+        if (!fs.existsSync(outputFilePath)) {
+          return res.status(500).json({ error: "Output file was not created" });
+        }
+
+        try {
+          const fileContent = fs.readFileSync(outputFilePath, "utf-8");
+
+          // Split the text into chunks using LangChain
+          const textChunks = await chunkText(fileContent);
+
+          // Generate embeddings for each chunk
+          const embeddingsArray = await generateEmbeddings(textChunks);
+
+          // Store embeddings in Pinecone and cache the index in Redis
+          await storeEmbeddingsInPinecone(projectName, embeddingsArray);
+
+          // Delete local file
+          fs.unlinkSync(outputFilePath);
+
+          return res.json({
+            success: true,
+            message: "Processing complete",
+            status: 200,
+          });
+        } catch (processingError) {
+          console.error("❌ Processing error:", processingError.message);
+          return res.status(500).json({ error: processingError.message });
+        }
+      }
+    );
+  } catch (error) {
+    console.error("❌ Unexpected error:", error.message);
+    return res
+      .status(500)
+      .json({ error: "Internal server error", details: error.message });
+  }
 });
 
 router.post("/query", async (req, res) => {
