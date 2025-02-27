@@ -70,7 +70,7 @@ app.post("/process", (req, res) => {
         await s3Client.send(command);
 
         console.log("File uploaded successfully to S3");
-
+        fs.unlinkSync(outputFilePath);
         return res.json({ success: true, outputFile: outputFilePath });
       } catch (uploadError) {
         console.error("S3 Upload failed:", uploadError.message);
