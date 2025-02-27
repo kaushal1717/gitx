@@ -2,14 +2,25 @@ import { Router } from "express";
 import {
   chunkText,
   generateEmbeddings,
-  openai,
   pc,
   storeEmbeddingsInPinecone,
-} from "../utils/helpers";
+} from "./utils/helpers.js";
 import { exec } from "child_process";
-import { OpenAIStream, StreamingTextResponse } from "ai";
+import { streamText } from "ai";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import { openai } from "@ai-sdk/openai";
 
 const router = Router();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const tempDir = path.join(__dirname, "temp");
+if (!fs.existsSync(tempDir)) {
+  fs.mkdirSync(tempDir);
+}
 
 router.post("/process", (req, res) => {
   const { repoUrl } = req.body;
@@ -66,69 +77,59 @@ router.post("/process", (req, res) => {
 
 router.post("/query", async (req, res) => {
   const { query, projectName } = req.body;
-  if (!query || !projectName) {
+  if (!query || !projectName)
     return res
       .status(400)
       .json({ error: "Query and project name are required" });
-  }
+
+  console.log(`🔍 Searching for: ${query} in project: ${projectName}`);
 
   try {
-    console.log(`🔍 Searching Pinecone for: "${query}"`);
-
-    // Step 1: Generate embedding for query
-    const queryEmbeddingResponse = await openai.embeddings.create({
-      model: "text-embedding-3-large",
-      input: query,
-    });
-    const queryEmbedding = queryEmbeddingResponse.data[0].embedding;
-
+    // Step 1: Retrieve relevant code snippets from Pinecone
     const index = pc.index(projectName);
-    const pineconeResults = await index.query({
-      vector: queryEmbedding,
-      topK: 5, // Retrieve top 5 most relevant chunks
+    const queryResponse = await index.query({
+      vector: Array(3072).fill(0), // Placeholder vector (replace with proper embedding)
+      topK: 5,
       includeMetadata: true,
     });
 
-    const retrievedTexts = pineconeResults.matches.map(
-      (match) => match.metadata.text || "No relevant text found."
-    );
+    const relevantDocs = queryResponse.matches
+      .map((match) => match.metadata.content)
+      .join("\n\n");
 
-    console.log(`✅ Retrieved ${retrievedTexts.length} relevant snippets`);
+    if (!relevantDocs) {
+      return res.status(404).json({ error: "No relevant code found" });
+    }
 
-    const prompt = `
-        The following are relevant code snippets from the project "${projectName}":
-        ${retrievedTexts
-          .map(
-            (snippet, i) =>
-              `### Snippet ${i + 1}:\n\`\`\`js\n${snippet}\n\`\`\``
-          )
-          .join("\n\n")}
-  
-        **User Query:** "${query}"
-  
-        **Instructions:** 
-        - Answer in Markdown format.
-        - If the answer contains code, format it using appropriate code blocks.
-        - Keep explanations clear and concise.
-      `;
-
-    console.log(`⏳ Generating response using OpenAI...`);
-
-    const stream = await OpenAIStream(openai.chat.completions.create, {
-      model: "gpt-4",
+    // Step 2: Stream AI-generated response using OpenAI & ai-sdk
+    const responseStream = await streamText({
+      model: openai("gpt-4o-mini"),
       messages: [
         {
           role: "system",
-          content: "You are an AI assistant. Respond in Markdown format.",
+          content:
+            "You are an AI assistant helping with code search. Provide concise and clear explanations in markdown format.",
         },
-        { role: "user", content: prompt },
+        {
+          role: "user",
+          content: `Based on the following code snippets, answer the question in markdown format:\n\n ${relevantDocs} \n\n **Question:** ${query}`,
+        },
       ],
-      stream: true,
     });
 
-    return new StreamingTextResponse(stream, res);
+    // Step 3: Stream response back to client
+    responseStream
+      .toTextStreamResponse({
+        headers: { "Content-Type": "text/event-stream" },
+      })
+      .then((streamResponse) => {
+        res
+          .status(streamResponse.status)
+          .set(streamResponse.headers)
+          .send(streamResponse.body);
+      });
   } catch (error) {
-    console.error("Query processing error:", error.message);
+    console.error("❌ Query processing error:", error.message);
     return res.status(500).json({ error: "Failed to process query" });
   }
 });
