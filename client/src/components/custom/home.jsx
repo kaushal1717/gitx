@@ -38,24 +38,26 @@ function Home() {
 
       <main className="flex-1">
         <section className="container py-12 md:py-24 text-center">
-          <h1 className="text-5xl font-black tracking-tight text-black md:text-6xl">
-            Chat with your <span className="text-cyan-500">codebase</span>
-          </h1>
-          <p className="text-xl font-bold text-black">
-            Turn any Git repository into an interactive AI assistant that
-            understands your code.
-          </p>
-          <p className="text-black font-medium">
-            Simply provide a repository URL and start asking questions about
-            your codebase.
-          </p>
-          <div className="mx-auto mt-12 max-w-2xl rounded-xl border-4 border-black bg-white p-8">
-            <form onSubmit={handleProcess} className="space-y-6">
-              <div className="flex gap-4">
+          <div className="mx-auto max-w-3xl  space-y-8 text-center">
+            <h1 className="text-4xl font-black tracking-tight text-black md:text-6xl">
+              Chat with your <span className="text-cyan-500">codebase</span>
+            </h1>
+            <p className="max-w-2xl mx-auto text-lg md:text-xl font-bold text-black">
+              Turn any Git repository into an interactive AI assistant that
+              understands your code.
+            </p>
+            <p className="text-black font-medium">
+              Simply provide a repository URL and start asking questions about
+              your codebase.
+            </p>
+          </div>
+          <div className="mx-auto mt-12 max-w-2xl rounded-xl border-4 border-black bg-white p-8 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
+            <form onSubmit={handleProcess} className="space-y-6 ">
+              <div className="flex flex-col md:flex-row gap-4">
                 <Input
                   type="text"
                   placeholder="https://github.com/..."
-                  className="flex-1 px-4 border-4 border-black h-14 text-lg font-medium rounded-lg focus-visible:ring-cyan-500"
+                  className="flex-1 p-4 border-4 border-black h-14 text-lg font-medium rounded-lg focus-visible:ring-cyan-500"
                   value={repoUrl}
                   onChange={(e) => setRepoUrl(e.target.value)}
                   required
@@ -69,8 +71,8 @@ function Home() {
               </div>
             </form>
           </div>
-          <div className="mx-auto mt-12 max-w-3xl text-center">
-            <div className="inline-block rounded-xl border-4 border-black bg-yellow-400 p-6">
+          <div className="mx-auto mt-12 max-w-2xl text-center">
+            <div className="inline-block rounded-xl border-4 border-black bg-yellow-400 p-6 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
               <p className="text-xl font-bold text-black">
                 After processing, you can chat with your repository using our
                 advanced RAG system.
@@ -81,9 +83,7 @@ function Home() {
       </main>
 
       <footer className="border-t-4 border-black bg-white py-6 text-center">
-        <p className="text-lg font-bold text-black">
-          made with ❤️ by the GitX team
-        </p>
+        <p className="text-lg font-bold text-black"></p>
       </footer>
     </div>
   );
