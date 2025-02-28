@@ -1,14 +1,13 @@
-/* eslint-disable no-unused-vars */
-import { useState, useRef, useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { ArrowLeft, Send, Bot, User } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { useChat } from "@ai-sdk/react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { nord } from "react-syntax-highlighter/dist/esm/styles/prism";
-import remarkGfm from "remark-gfm";
-import { toast } from "sonner";
 
 function ChatInterface() {
   const navigate = useNavigate();
@@ -18,135 +17,25 @@ function ChatInterface() {
   const projectName = repoUrl;
   const messagesEndRef = useRef(null);
 
-  const [messages, setMessages] = useState([
-    {
-      role: "assistant",
-      content: `I've processed the repository at ${repoUrl}. What would you like to know about this codebase?`,
+  const { messages, input, handleInputChange, handleSubmit } = useChat({
+    api: "http://localhost:5001/api/query",
+    experimental_prepareRequestBody: () => {
+      return {
+        query: input,
+        projectName,
+      };
     },
-  ]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
+  });
 
-  const handleSendMessage = async (e) => {
-    e.preventDefault();
+  const handleSubmitWrapper = (event) => {
+    event.preventDefault();
     if (!input.trim()) return;
-
-    const userMessage = { role: "user", content: input };
-    setMessages((prev) => [...prev, userMessage]);
-    setInput("");
-    setLoading(true);
-
-    try {
-      const response = await fetch("http://localhost:5001/api/query", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: input, projectName }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch response: ${response.status}`);
-      }
-
-      // Try to check if response is JSON first (for session expiration)
-      try {
-        const clonedResponse = response.clone();
-        const jsonData = await clonedResponse.json();
-        if (jsonData && jsonData.redirect) {
-          toast.error("Your session is expired");
-          navigate("/");
-          return;
-        }
-      } catch (jsonError) {
-        // Not JSON, proceed with streaming
-      }
-
-      // Process as stream
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let botMessage = { role: "assistant", content: "" };
-      let accumulatedContent = "";
-
-      setMessages((prev) => [...prev, botMessage]);
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value, { stream: true });
-
-        // Use our specialized token extraction method
-        const processedChunk = extractTokenizedContent(chunk);
-        accumulatedContent += processedChunk;
-
-        // Clean and format the accumulated content
-        const formattedContent = formatMarkdown(accumulatedContent);
-
-        // Update the message with the cleaned content
-        botMessage.content = formattedContent;
-
-        setMessages((prev) => {
-          const updatedMessages = [...prev];
-          updatedMessages[updatedMessages.length - 1] = { ...botMessage };
-          return updatedMessages;
-        });
-      }
-    } catch (error) {
-      console.error("Error in handleSendMessage:", error);
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: `❌ Error: ${error.message || "Unable to process request."}`,
-        },
-      ]);
-    }
-
-    setLoading(false);
-  };
-
-  // Function to extract content from the tokenized format
-  const extractTokenizedContent = (chunk) => {
-    // Extract all 0:"content" patterns
-    const matches = chunk.match(/0:"([^"]*)"/g);
-
-    if (matches && matches.length > 0) {
-      // Extract just the content part and join all pieces
-      return matches
-        .map((match) => match.substring(3, match.length - 1))
-        .join("");
-    }
-
-    // Fallback: if no matches found, try to clean up the chunk manually
-    return chunk
-      .replace(/f:\{"messageId":"[^"]*"\}/g, "")
-      .replace(/e:\{"finishReason[^}]*\}/g, "")
-      .replace(/d:\{"finishReason[^}]*\}/g, "")
-      .trim();
-  };
-
-  // Function to format the markdown content correctly
-  const formatMarkdown = (content) => {
-    if (!content) return "";
-
-    // Remove any trailing metadata before formatting
-    let cleanedContent = content
-      // Remove trailing metadata like "isContinued":false} }
-      .replace(/,?"isContinued":(true|false)\}\s*\}*\s*$/g, "")
-      .replace(/e:\{"finishReason":"[^"]*","usage":\{[^}]*\}\}*\s*$/g, "")
-      // Remove any other trailing JSON-like fragments
-      .replace(/\s*\{"[^"]*":"[^"]*"\}\s*$/g, "")
-      // Clean up any other metadata patterns
-      .replace(/d:\{[^}]*\}/g, "")
-      .trim();
-
-    // Then apply standard formatting replacements
-    return cleanedContent
-      .replace(/\\n/g, "\n")
-      .replace(/\\r/g, "")
-      .replace(/\\\\/g, "\\")
-      .replace(/\\"/g, '"')
-      .replace(/\\'/g, "'")
-      .replace(/\\\*\*/g, "**");
+    handleSubmit({
+      body: {
+        projectName,
+        query: input,
+      },
+    });
   };
 
   useEffect(() => {
@@ -174,176 +63,95 @@ function ChatInterface() {
         </div>
 
         <div className="h-[500px] overflow-y-auto mb-6 p-4 border-4 border-black rounded-lg bg-yellow-50">
-          {messages.map((message, index) => (
-            <div
-              key={index}
-              className={`mb-4 ${message.role === "user" ? "ml-12" : "mr-12"}`}
-            >
+          <div className="mb-4 mr-12">
+            <div className="p-4 rounded-lg border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] bg-cyan-100">
+              <div className="flex items-center mb-2">
+                <Bot className="h-6 w-6 mr-2 text-cyan-500" />
+                <span className="font-bold">GitX Assistant</span>
+              </div>
+              <p className="font-medium">
+                I&#39;ve processed the repository at {repoUrl}. What would you
+                like to know about this codebase?
+              </p>
+            </div>
+          </div>
+          {messages.map((message, index) => {
+            const content = message.content.trim();
+            const codeBlockMatch = content.match(/^```(\w+)\n([\s\S]+)```$/);
+            console.log(codeBlockMatch);
+            return (
               <div
-                className={`p-4 rounded-lg border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]
-                  ${
+                key={index}
+                className={`mb-4 ${
+                  message.role === "user" ? "ml-12" : "mr-12"
+                }`}
+              >
+                <div
+                  className={`p-4 rounded-lg border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] ${
                     message.role === "user"
                       ? "bg-yellow-400 ml-auto"
                       : "bg-cyan-100"
                   }`}
-              >
-                <div className="flex items-center mb-2">
-                  {message.role === "assistant" ? (
-                    <Bot className="h-6 w-6 mr-2 text-cyan-500" />
-                  ) : (
-                    <User className="h-6 w-6 mr-2 text-yellow-600" />
-                  )}
-                  <span className="font-bold">
-                    {message.role === "assistant" ? "GitX Assistant" : "You"}
-                  </span>
-                </div>
-                {message.role === "user" ? (
-                  <p className="font-medium whitespace-pre-line">
-                    {message.content}
-                  </p>
-                ) : (
+                >
+                  <div className="flex items-center mb-2">
+                    {message.role === "assistant" ? (
+                      <Bot className="h-6 w-6 mr-2 text-cyan-500" />
+                    ) : (
+                      <User className="h-6 w-6 mr-2 text-yellow-600" />
+                    )}
+                    <span className="font-bold">
+                      {message.role === "assistant" ? "GitX Assistant" : "You"}
+                    </span>
+                  </div>
                   <div className="markdown-content font-medium">
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      components={{
-                        code({ node, inline, className, children, ...props }) {
-                          const match = /language-(\w+)/.exec(className || "");
-                          return !inline && match ? (
-                            <div className="my-2">
+                    {codeBlockMatch ? (
+                      <SyntaxHighlighter
+                        style={nord}
+                        language={codeBlockMatch[1] || "plaintext"}
+                        PreTag="div"
+                        className="border-2 border-black rounded my-2"
+                      >
+                        {codeBlockMatch[2]}
+                      </SyntaxHighlighter>
+                    ) : (
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          code({ inline, className, children, ...props }) {
+                            const match = /language-(\w+)/.exec(
+                              className || ""
+                            );
+                            return !inline && match ? (
                               <SyntaxHighlighter
                                 style={nord}
                                 language={match[1]}
                                 PreTag="div"
-                                className="border-2 border-black rounded"
+                                className="border-2 border-black rounded my-2"
                                 {...props}
                               >
                                 {String(children).replace(/\n$/, "")}
                               </SyntaxHighlighter>
-                            </div>
-                          ) : (
-                            <code
-                              className={`${className} bg-gray-200 px-1 py-0.5 rounded`}
-                              {...props}
-                            >
-                              {children}
-                            </code>
-                          );
-                        },
-                        // Apply specific styling to list items and paragraphs
-                        p({ children }) {
-                          return (
-                            <p className="my-2 whitespace-pre-line">
-                              {children}
-                            </p>
-                          );
-                        },
-                        ul({ children }) {
-                          return (
-                            <ul className="list-disc ml-6 my-2">{children}</ul>
-                          );
-                        },
-                        ol({ children }) {
-                          return (
-                            <ol className="list-decimal ml-6 my-2">
-                              {children}
-                            </ol>
-                          );
-                        },
-                        li({ children }) {
-                          return <li className="my-1">{children}</li>;
-                        },
-                        h1({ children }) {
-                          return (
-                            <h1 className="text-xl font-bold my-3">
-                              {children}
-                            </h1>
-                          );
-                        },
-                        h2({ children }) {
-                          return (
-                            <h2 className="text-lg font-bold my-2">
-                              {children}
-                            </h2>
-                          );
-                        },
-                        h3({ children }) {
-                          return (
-                            <h3 className="text-md font-bold my-2">
-                              {children}
-                            </h3>
-                          );
-                        },
-                        a({ children, href }) {
-                          return (
-                            <a
-                              href={href}
-                              className="text-blue-600 underline"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                            >
-                              {children}
-                            </a>
-                          );
-                        },
-                        blockquote({ children }) {
-                          return (
-                            <blockquote className="border-l-4 border-gray-400 pl-4 italic my-2">
-                              {children}
-                            </blockquote>
-                          );
-                        },
-                        table({ children }) {
-                          return (
-                            <div className="overflow-x-auto my-4">
-                              <table className="border-collapse border border-gray-300 w-full">
+                            ) : (
+                              <code className={className} {...props}>
                                 {children}
-                              </table>
-                            </div>
-                          );
-                        },
-                        thead({ children }) {
-                          return (
-                            <thead className="bg-gray-100">{children}</thead>
-                          );
-                        },
-                        tbody({ children }) {
-                          return <tbody>{children}</tbody>;
-                        },
-                        tr({ children }) {
-                          return (
-                            <tr className="border-b border-gray-300">
-                              {children}
-                            </tr>
-                          );
-                        },
-                        th({ children }) {
-                          return (
-                            <th className="border border-gray-300 px-4 py-2 text-left">
-                              {children}
-                            </th>
-                          );
-                        },
-                        td({ children }) {
-                          return (
-                            <td className="border border-gray-300 px-4 py-2">
-                              {children}
-                            </td>
-                          );
-                        },
-                      }}
-                    >
-                      {message.content}
-                    </ReactMarkdown>
+                              </code>
+                            );
+                          },
+                        }}
+                      >
+                        {message.content.trim()}
+                      </ReactMarkdown>
+                    )}
                   </div>
-                )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           <div ref={messagesEndRef} />
         </div>
 
         <form
-          onSubmit={handleSendMessage}
+          onSubmit={handleSubmitWrapper}
           className="flex flex-col md:flex-row gap-4"
         >
           <Input
@@ -351,16 +159,14 @@ function ChatInterface() {
             placeholder="Ask something about the codebase..."
             className="flex-1 p-4 border-4 border-black h-14 text-sm md:text-lg font-medium rounded-lg focus-visible:ring-cyan-500"
             value={input}
-            onChange={(e) => setInput(e.target.value)}
-            disabled={loading}
+            onChange={handleInputChange}
           />
           <Button
             type="submit"
             className="h-14 flex items-center justify-center p-4 text-lg font-bold bg-cyan-500 hover:bg-cyan-600 text-white border-4 border-black rounded-lg shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-y-1 hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all"
-            disabled={loading}
           >
             <Send className="h-5 w-5 mr-2" />
-            {loading ? "Loading..." : "Send"}
+            Send
           </Button>
         </form>
       </div>
