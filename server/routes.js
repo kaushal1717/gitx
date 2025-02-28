@@ -123,47 +123,60 @@ router.post("/query", async (req, res) => {
       .json({ error: "Query and project name are required" });
 
   console.log(`🔍 Searching for: ${query} in project: ${projectName}`);
+
   try {
-    // Step 1: Generate embedding for the query
+    // Step 1: Check if the Pinecone index exists
+    const existingIndexes = await pc.listIndexes();
+    const indexNames = existingIndexes.indexes.map((index) => index.name);
+
+    if (!indexNames.includes(projectName)) {
+      console.warn(`🚨 Index "${projectName}" not found. Ending session.`);
+      return res.status(307).json({
+        redirect: "/", // Redirect to homepage
+        message: "Session expired. Redirecting to home page.",
+      });
+    }
+
+    // Step 2: Generate embedding for the query
     const { embedding } = await embed({
       model: openai.embedding("text-embedding-3-large"),
       value: query,
     });
+
     console.log("Embedding:", embedding);
 
-    // Step 2: Query Pinecone index
+    // Step 3: Query Pinecone index
     const index = pc.index(projectName);
     const queryResponse = await index.query({
       vector: embedding,
       topK: 5,
       includeMetadata: true,
     });
+
     console.log("Query Response:", JSON.stringify(queryResponse, null, 2));
 
-    // Step 3: Extract relevant documents from matches
+    // Step 4: Extract relevant documents
     const matches = queryResponse.matches;
     if (!matches || matches.length === 0) {
       return res.status(404).json({ error: "No relevant code found" });
     }
 
-    // Extract content from metadata (adjust based on actual structure)
     const relevantDocs = matches
       .map((match) => match.metadata?.text || "No content available")
       .join("\n\n");
-    console.log("Relevant Docs:", relevantDocs);
 
     if (!relevantDocs.trim()) {
       return res.status(404).json({ error: "No relevant code found" });
     }
 
-    // Step 4: Stream AI-generated response using OpenAI & ai-sdk
+    // Step 5: Stream AI-generated response
     const responseStream = streamText({
       model: openai("gpt-4o"),
       messages: [
         {
           role: "system",
           content:
-            "You are an AI assistant helping with codebase exploration & explaination by providing relevant code snippets in proper markdown format and details. Provide concise and clear explanations in markdown format.",
+            "You are an AI assistant helping with codebase exploration & explanation. Provide concise and clear explanations in markdown format.",
         },
         {
           role: "user",
@@ -173,8 +186,6 @@ router.post("/query", async (req, res) => {
     });
 
     console.log(responseStream);
-
-    // Return the streamed response
     return responseStream.pipeDataStreamToResponse(res);
   } catch (error) {
     console.error("❌ Query processing error:", error.message);

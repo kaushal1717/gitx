@@ -8,6 +8,7 @@ import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { nord } from "react-syntax-highlighter/dist/esm/styles/prism";
 import remarkGfm from "remark-gfm";
+import { toast } from "sonner";
 
 function ChatInterface() {
   const navigate = useNavigate();
@@ -41,10 +42,18 @@ function ChatInterface() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query: input, projectName }),
       });
+      const jsonResponse = await response.json();
+      if (jsonResponse.redirect) {
+        toast.error("Your session is expired");
+        navigate("/"); // Redirect to home page
+        return;
+      }
 
       if (!response.ok) {
         throw new Error(`Failed to fetch response: ${response.status}`);
       }
+
+      // Check if the response signals that the Pinecone index was deleted
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
