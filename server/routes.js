@@ -11,7 +11,7 @@ import { streamText, embed } from "ai";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { openai } from "@ai-sdk/openai";
+import { google } from "@ai-sdk/google";
 
 import { config } from "dotenv";
 
@@ -139,7 +139,7 @@ router.post("/query", async (req, res) => {
 
     // Step 2: Generate embedding for the query
     const { embedding } = await embed({
-      model: openai.embedding("text-embedding-3-large"),
+      model: google.textEmbeddingModel("text-embedding-004"),
       value: query,
     });
 
@@ -171,7 +171,7 @@ router.post("/query", async (req, res) => {
 
     // Step 5: Stream AI-generated response
     const responseStream = streamText({
-      model: openai("gpt-4o"),
+      model: google("gemini-2.0-flash-001"),
       messages: [
         {
           role: "system",
