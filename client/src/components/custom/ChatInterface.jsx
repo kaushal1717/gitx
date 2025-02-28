@@ -62,7 +62,9 @@ function ChatInterface() {
           </h2>
         </div>
 
+        {/* Chat Message Container */}
         <div className="h-[500px] overflow-y-auto mb-6 p-4 border-4 border-black rounded-lg bg-yellow-50">
+          {/* Initial AI Message */}
           <div className="mb-4 mr-12">
             <div className="p-4 rounded-lg border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] bg-cyan-100">
               <div className="flex items-center mb-2">
@@ -75,81 +77,69 @@ function ChatInterface() {
               </p>
             </div>
           </div>
-          {messages.map((message, index) => {
-            const content = message.content.trim();
-            const codeBlockMatch = content.match(/^```(\w+)\n([\s\S]+)```$/);
-            console.log(codeBlockMatch);
-            return (
+
+          {/* Display Messages */}
+          {messages.map((message, index) => (
+            <div
+              key={index}
+              className={`mb-4 ${message.role === "user" ? "ml-12" : "mr-12"}`}
+            >
               <div
-                key={index}
-                className={`mb-4 ${
-                  message.role === "user" ? "ml-12" : "mr-12"
+                className={`p-4 rounded-lg border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] ${
+                  message.role === "user"
+                    ? "bg-yellow-400 ml-auto"
+                    : "bg-cyan-100"
                 }`}
               >
-                <div
-                  className={`p-4 rounded-lg border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] ${
-                    message.role === "user"
-                      ? "bg-yellow-400 ml-auto"
-                      : "bg-cyan-100"
-                  }`}
-                >
-                  <div className="flex items-center mb-2">
-                    {message.role === "assistant" ? (
-                      <Bot className="h-6 w-6 mr-2 text-cyan-500" />
-                    ) : (
-                      <User className="h-6 w-6 mr-2 text-yellow-600" />
-                    )}
-                    <span className="font-bold">
-                      {message.role === "assistant" ? "GitX Assistant" : "You"}
-                    </span>
-                  </div>
-                  <div className="markdown-content font-medium">
-                    {codeBlockMatch ? (
-                      <SyntaxHighlighter
-                        style={nord}
-                        language={codeBlockMatch[1] || "plaintext"}
-                        PreTag="div"
-                        className="border-2 border-black rounded my-2"
-                      >
-                        {codeBlockMatch[2]}
-                      </SyntaxHighlighter>
-                    ) : (
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        components={{
-                          code({ inline, className, children, ...props }) {
-                            const match = /language-(\w+)/.exec(
-                              className || ""
-                            );
-                            return !inline && match ? (
-                              <SyntaxHighlighter
-                                style={nord}
-                                language={match[1]}
-                                PreTag="div"
-                                className="border-2 border-black rounded my-2"
-                                {...props}
-                              >
-                                {String(children).replace(/\n$/, "")}
-                              </SyntaxHighlighter>
-                            ) : (
-                              <code className={className} {...props}>
-                                {children}
-                              </code>
-                            );
-                          },
-                        }}
-                      >
-                        {message.content.trim()}
-                      </ReactMarkdown>
-                    )}
-                  </div>
+                <div className="flex items-center mb-2">
+                  {message.role === "assistant" ? (
+                    <Bot className="h-6 w-6 mr-2 text-cyan-500" />
+                  ) : (
+                    <User className="h-6 w-6 mr-2 text-yellow-600" />
+                  )}
+                  <span className="font-bold">
+                    {message.role === "assistant" ? "GitX Assistant" : "You"}
+                  </span>
+                </div>
+
+                {/* Message Content */}
+                <div className="markdown-content font-medium">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      code({ inline, className, children, ...props }) {
+                        const match = /language-(\w+)/.exec(className || "");
+                        return !inline && match ? (
+                          <SyntaxHighlighter
+                            style={nord}
+                            language={match[1]}
+                            PreTag="div"
+                            className="border-2 border-black rounded my-2"
+                            {...props}
+                          >
+                            {String(children).replace(/\n$/, "")}
+                          </SyntaxHighlighter>
+                        ) : (
+                          <code
+                            className="bg-gray-200 px-1 py-0.5 rounded"
+                            {...props}
+                          >
+                            {children}
+                          </code>
+                        );
+                      },
+                    }}
+                  >
+                    {message.content.trim()}
+                  </ReactMarkdown>
                 </div>
               </div>
-            );
-          })}
+            </div>
+          ))}
           <div ref={messagesEndRef} />
         </div>
 
+        {/* Input Field */}
         <form
           onSubmit={handleSubmitWrapper}
           className="flex flex-col md:flex-row gap-4"
