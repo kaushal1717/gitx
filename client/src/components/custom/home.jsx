@@ -19,11 +19,14 @@ function Home() {
     const projectName = repoUrl.split("/")[4];
 
     try {
-      const response = await fetch("http://localhost:5001/api/process", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ repoUrl }),
-      });
+      const response = await fetch(
+        `${import.meta.env.VITE_BACKEND_URL}/api/process`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ repoUrl }),
+        }
+      );
 
       const result = await response.json();
 

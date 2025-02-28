@@ -18,7 +18,7 @@ function ChatInterface() {
   const messagesEndRef = useRef(null);
 
   const { messages, input, handleInputChange, handleSubmit } = useChat({
-    api: "http://localhost:5001/api/query",
+    api: `${import.meta.env.VITE_BACKEND_URL}/api/query`,
     experimental_prepareRequestBody: () => {
       return {
         query: input,
