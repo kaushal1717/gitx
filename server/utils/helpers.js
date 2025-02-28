@@ -1,44 +1,41 @@
 import { Pinecone } from "@pinecone-database/pinecone";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import { config } from "dotenv";
-import OpenAI from "openai";
 import { Redis } from "@upstash/redis";
+import { google } from "@ai-sdk/google";
+import { embed } from "ai";
 
 config();
 
-// Initialize OpenAI, Pinecone, and Upstash Redis
-export const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 export const pc = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
 export const redis = new Redis({
   url: process.env.UPSTASH_REDIS_URL,
   token: process.env.UPSTASH_REDIS_TOKEN,
 });
 
-// Function to chunk text using LangChain
 export const chunkText = async (text, chunkSize = 8000, chunkOverlap = 200) => {
   const splitter = new RecursiveCharacterTextSplitter({
     chunkSize,
     chunkOverlap,
-    separators: ["\n\n", "\n", " "], // Prioritize splitting at paragraphs, then lines, then words
+    separators: ["\n\n", "\n", " "],
   });
 
   return await splitter.createDocuments([text]);
 };
 
-// Function to generate embeddings using OpenAI
 export const generateEmbeddings = async (textChunks) => {
   let embeddingsArray = [];
 
   for (let i = 0; i < textChunks.length; i++) {
     try {
-      const response = await openai.embeddings.create({
-        model: "text-embedding-3-large", // OpenAI embedding model
-        input: textChunks[i].pageContent, // Use chunked text content
+      const { embedding } = await embed({
+        model: google.textEmbeddingModel("text-embedding-004"),
+        value: textChunks[i].pageContent,
       });
 
       embeddingsArray.push({
         id: `chunk-${i}`,
-        values: response.data[0].embedding,
+        values: embedding,
         metadata: { chunk_index: i, text: textChunks[i].pageContent },
       });
     } catch (error) {
@@ -52,7 +49,6 @@ export const generateEmbeddings = async (textChunks) => {
   return embeddingsArray;
 };
 
-// Ensure Pinecone index exists
 export const ensurePineconeIndex = async (indexName) => {
   try {
     const existingIndexes = await pc.listIndexes();
@@ -63,10 +59,10 @@ export const ensurePineconeIndex = async (indexName) => {
 
       await pc.createIndex({
         name: indexName,
-        dimension: 3072, // Match OpenAI's embedding size
+        dimension: 768,
         metric: "cosine",
         spec: {
-          serverless: { cloud: "aws", region: "us-east-1" }, // Adjust region if needed
+          serverless: { cloud: "aws", region: "us-east-1" },
         },
       });
 
@@ -80,10 +76,8 @@ export const ensurePineconeIndex = async (indexName) => {
   }
 };
 
-// Store embeddings in Pinecone & cache the index in Redis
 export const storeEmbeddingsInPinecone = async (indexName, embeddingsArray) => {
   try {
-    // Ensure the index exists before storing
     await ensurePineconeIndex(indexName);
 
     const index = pc.index(indexName);
@@ -91,7 +85,6 @@ export const storeEmbeddingsInPinecone = async (indexName, embeddingsArray) => {
 
     console.log("✅ Embeddings stored in Pinecone.");
 
-    // Cache the index in Redis with a 5-minute expiration
     try {
       await redis.set(indexName, "cached", { ex: 3600 });
       console.log(`✅ Cached index "${indexName}" in Redis.`);
@@ -108,7 +101,6 @@ export const listen = async () => {
   try {
     console.log("🧹 Checking for expired Redis keys...");
 
-    // Fetch all keys (Upstash doesn't support "keys *", so track relevant keys manually if needed)
     const allKeys = await redis.keys("*");
 
     if (!allKeys.length) {
@@ -124,10 +116,8 @@ export const listen = async () => {
           `🗑️ Key "${key}" has expired, removing from Redis and Pinecone...`
         );
 
-        // Delete key from Redis
         await redis.del(key);
 
-        // Remove corresponding index from Pinecone
         try {
           const indexExists = (await pc.listIndexes()).indexes.some(
             (index) => index.name === key
@@ -154,7 +144,6 @@ export const listen = async () => {
   }
 };
 
-// Run listen function every minute
 setInterval(() => {
   listen().catch((error) => console.error("❌ Error in listening:", error));
-}, 30 * 60 * 1000); // Runs every 60 seconds (1 minute)
+}, 30 * 60 * 1000);
