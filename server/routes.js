@@ -176,7 +176,7 @@ router.post("/query", async (req, res) => {
         {
           role: "system",
           content:
-            "You are an AI assistant helping with codebase exploration & explanation. Provide concise and clear explanations in markdown format.",
+            "You are an AI assistant helping with codebase exploration & explanation. Provide concise and clear explanations in markdown format. Don't give ",
         },
         {
           role: "user",
