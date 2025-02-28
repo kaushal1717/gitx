@@ -42,19 +42,25 @@ function ChatInterface() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query: input, projectName }),
       });
-      const jsonResponse = await response.json();
-      if (jsonResponse.redirect) {
-        toast.error("Your session is expired");
-        navigate("/"); // Redirect to home page
-        return;
-      }
 
       if (!response.ok) {
         throw new Error(`Failed to fetch response: ${response.status}`);
       }
 
-      // Check if the response signals that the Pinecone index was deleted
+      // Try to check if response is JSON first (for session expiration)
+      try {
+        const clonedResponse = response.clone();
+        const jsonData = await clonedResponse.json();
+        if (jsonData && jsonData.redirect) {
+          toast.error("Your session is expired");
+          navigate("/");
+          return;
+        }
+      } catch (jsonError) {
+        // Not JSON, proceed with streaming
+      }
 
+      // Process as stream
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let botMessage = { role: "assistant", content: "" };
@@ -68,18 +74,15 @@ function ChatInterface() {
 
         const chunk = decoder.decode(value, { stream: true });
 
-        // Process the chunk - clean up potential formatting
-        const processedChunk = processChunk(chunk);
+        // Use our specialized token extraction method
+        const processedChunk = extractTokenizedContent(chunk);
         accumulatedContent += processedChunk;
 
-        // Remove any metadata from the accumulated content
-        accumulatedContent = removeMetadata(accumulatedContent);
+        // Clean and format the accumulated content
+        const formattedContent = formatMarkdown(accumulatedContent);
 
-        // Fix newlines and code formatting in the accumulated content
-        accumulatedContent = fixCodeFormatting(accumulatedContent);
-
-        // Update the message with processed content
-        botMessage.content = accumulatedContent;
+        // Update the message with the cleaned content
+        botMessage.content = formattedContent;
 
         setMessages((prev) => {
           const updatedMessages = [...prev];
@@ -101,113 +104,49 @@ function ChatInterface() {
     setLoading(false);
   };
 
-  // Helper function to process incoming chunks
-  const processChunk = (chunk) => {
-    // If the chunk contains tokenized format
-    if (chunk.includes('0:"') || chunk.includes("f:{")) {
-      try {
-        // Extract only the actual content
-        const contentMatches = chunk.match(/0:"([^"]*)"/g);
-        if (contentMatches) {
-          return contentMatches
-            .map((match) => match.substring(3, match.length - 1))
-            .join("");
-        }
-      } catch (e) {
-        console.warn("Chunk processing error:", e);
-      }
+  // Function to extract content from the tokenized format
+  const extractTokenizedContent = (chunk) => {
+    // Extract all 0:"content" patterns
+    const matches = chunk.match(/0:"([^"]*)"/g);
+
+    if (matches && matches.length > 0) {
+      // Extract just the content part and join all pieces
+      return matches
+        .map((match) => match.substring(3, match.length - 1))
+        .join("");
     }
 
-    // If we can't process it or it's already clean, return as is
-    return chunk;
+    // Fallback: if no matches found, try to clean up the chunk manually
+    return chunk
+      .replace(/f:\{"messageId":"[^"]*"\}/g, "")
+      .replace(/e:\{"finishReason[^}]*\}/g, "")
+      .replace(/d:\{"finishReason[^}]*\}/g, "")
+      .trim();
   };
 
-  // Function to remove metadata from the accumulated content
-  const removeMetadata = (content) => {
-    // Remove the token usage and finish reason metadata
-    let cleaned = content
-      // Remove finish reason and token usage
-      .replace(
-        /\s*e:\{"finishReason":"[^"]*","usage":\{"promptTokens":\d+,"completionTokens":\d+\},"isContinued":(true|false)\}(\s*\})?/g,
-        ""
-      )
-      // Remove message IDs
-      .replace(/f:\{"messageId":"[^"]*"\}\s*/g, "")
-      // Remove other metadata like d:{...}
-      .replace(/d:\{[^}]*\}/g, "");
+  // Function to format the markdown content correctly
+  const formatMarkdown = (content) => {
+    if (!content) return "";
 
-    // Remove any trailing close brackets that might be left
-    cleaned = cleaned.replace(/\s*\}\s*$/, "");
+    // Remove any trailing metadata before formatting
+    let cleanedContent = content
+      // Remove trailing metadata like "isContinued":false} }
+      .replace(/,?"isContinued":(true|false)\}\s*\}*\s*$/g, "")
+      .replace(/e:\{"finishReason":"[^"]*","usage":\{[^}]*\}\}*\s*$/g, "")
+      // Remove any other trailing JSON-like fragments
+      .replace(/\s*\{"[^"]*":"[^"]*"\}\s*$/g, "")
+      // Clean up any other metadata patterns
+      .replace(/d:\{[^}]*\}/g, "")
+      .trim();
 
-    return cleaned;
-  };
-
-  // Comprehensive function to fix code formatting issues
-  // Enhance the fixCodeFormatting function with stronger quote processing
-  const fixCodeFormatting = (content) => {
-    // Replace escaped newlines with actual newlines
-    let fixed = content.replace(/\\n/g, "\n").replace(/\\r/g, "");
-
-    // Fix markdown formatting
-    fixed = fixed.replace(/\\\*\*/g, "**"); // Fix bold formatting
-
-    // Replace single backslash followed by double quotes with just double quotes
-    fixed = fixed.replace(/\\"/g, '"');
-
-    // Replace single backslash followed by single quotes with just single quotes
-    fixed = fixed.replace(/\\'/g, "'");
-
-    // Replace the pattern of \groq-sdk\ with 'groq-sdk'
-    fixed = fixed.replace(/\\([a-zA-Z0-9_-]+)\\/g, "'$1'");
-
-    // Replace the pattern of \summary\ with 'summary'
-    fixed = fixed.replace(/\\([a-zA-Z0-9_-]+)\\/g, "'$1'");
-
-    // Replace the pattern of \user\ with 'user'
-    fixed = fixed.replace(/\\([a-zA-Z0-9_-]+)\\/g, "'$1'");
-
-    // Replace any remaining backslash patterns
-    fixed = fixed.replace(/\\([a-zA-Z0-9_-]+)\\/g, '"$1"');
-    fixed = fixed.replace(/\\\\/g, "\\");
-
-    // Process code blocks with backticks
-    const codeBlockRegex = /```[\s\S]*?```/g;
-    let match;
-    let lastIndex = 0;
-    let result = "";
-
-    // Find all code blocks and process them separately
-    while ((match = codeBlockRegex.exec(fixed)) !== null) {
-      // Add text before the code block
-      result += fixed.substring(lastIndex, match.index);
-
-      // Get the code block content
-      let codeBlock = match[0];
-
-      // Fix additional backslash patterns in code blocks
-      codeBlock = codeBlock
-        .replace(/\\([a-zA-Z0-9_-]+)\\/g, '"$1"') // Replace \word\ with "word"
-        .replace(/\\"/g, '"') // Replace \" with "
-        .replace(/\\'/g, "'") // Replace \' with '
-        .replace(/\\\\/g, "\\") // Replace \\ with \
-        .replace(/\\([^\\])/g, "$1"); // Replace \X with X where X is not a backslash
-
-      // Add the fixed code block
-      result += codeBlock;
-
-      // Update the last index
-      lastIndex = match.index + match[0].length;
-    }
-
-    // Add any remaining text
-    result += fixed.substring(lastIndex);
-
-    // If no code blocks were found, apply fixes to the entire content
-    if (result === "") {
-      return fixed;
-    }
-
-    return result;
+    // Then apply standard formatting replacements
+    return cleanedContent
+      .replace(/\\n/g, "\n")
+      .replace(/\\r/g, "")
+      .replace(/\\\\/g, "\\")
+      .replace(/\\"/g, '"')
+      .replace(/\\'/g, "'")
+      .replace(/\\\*\*/g, "**");
   };
 
   useEffect(() => {
