@@ -1,7 +1,6 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { ArrowLeft, Send, Bot, User } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
-
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 
@@ -10,6 +9,8 @@ function ChatInterface() {
   const location = useLocation();
   const params = new URLSearchParams(location.search);
   const repoUrl = params.get("repo") || "Unknown Repository";
+  const projectName = repoUrl;
+  const messagesEndRef = useRef(null);
 
   const [messages, setMessages] = useState([
     {
@@ -18,34 +19,105 @@ function ChatInterface() {
     },
   ]);
   const [input, setInput] = useState("");
-
-  const handleSendMessage = (e) => {
+  const [loading, setLoading] = useState(false);
+  const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!input.trim()) return;
 
-    // Add the user's message
-    setMessages((prev) => [...prev, { role: "user", content: input }]);
+    const userMessage = { role: "user", content: input };
+    setMessages((prev) => [...prev, userMessage]);
     setInput("");
+    setLoading(true);
+    console.log(projectName);
 
-    setTimeout(() => {
-      const responses = [
-        "This codebase uses a React frontend with a Node.js backend.",
-        "The authentication system uses JWT tokens stored in HTTP-only cookies.",
-        "There are approximately 15,000 lines of code across 120 files.",
-        "The project uses TypeScript and has 85% test coverage with Jest.",
-        "The database interactions use Prisma ORM with PostgreSQL.",
-      ];
+    try {
+      const response = await fetch("http://localhost:5001/api/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: input, projectName }),
+      });
 
-      // Add AI response after 1 second delay
+      if (!response.ok) {
+        throw new Error(`Failed to fetch response: ${response.status}`);
+      }
+
+      // Check if we're getting a stream or JSON
+      const contentType = response.headers.get("Content-Type") || "";
+
+      if (contentType.includes("application/json")) {
+        // Handle JSON response
+        const data = await response.json();
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: data.content || JSON.stringify(data) },
+        ]);
+      } else {
+        // Handle streaming response
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let botMessage = { role: "assistant", content: "" };
+        let accumulatedContent = "";
+
+        setMessages((prev) => [...prev, botMessage]);
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+
+          // Process the chunk - clean up potential formatting
+          const processedChunk = processChunk(chunk);
+          accumulatedContent += processedChunk;
+
+          // Update the message with processed content
+          botMessage.content = accumulatedContent;
+
+          setMessages((prev) => {
+            const updatedMessages = [...prev];
+            updatedMessages[updatedMessages.length - 1] = { ...botMessage };
+            return updatedMessages;
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Error in handleSendMessage:", error);
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: responses[Math.floor(Math.random() * responses.length)],
+          content: `❌ Error: ${error.message || "Unable to process request."}`,
         },
       ]);
-    }, 1000);
+    }
+
+    setLoading(false);
   };
+
+  // Helper function to process incoming chunks
+  const processChunk = (chunk) => {
+    // If the chunk contains tokenized format like your paste.txt
+    if (chunk.includes('0:"') || chunk.includes("f:{")) {
+      try {
+        // Extract only the actual content
+        const contentMatches = chunk.match(/0:"([^"]*)"/g);
+        if (contentMatches) {
+          return contentMatches
+            .map((match) => match.substring(3, match.length - 1))
+            .join("");
+        }
+      } catch (e) {
+        console.warn("Chunk processing error:", e);
+      }
+    }
+
+    // If we can't process it or it's already clean, return as is
+    return chunk;
+  };
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   return (
     <div className="container py-8 max-w-4xl mx-auto">
@@ -63,9 +135,7 @@ function ChatInterface() {
         <div className="mb-4 border-b-4 border-black pb-4">
           <h2 className="text-xl md:text-2xl font-black">
             Chat with Repository:{" "}
-            <span className="text-cyan-500">
-              {repoUrl.replace("https://github.com/", "")}
-            </span>
+            <span className="text-cyan-500">{projectName}</span>
           </h2>
         </div>
 
@@ -76,14 +146,12 @@ function ChatInterface() {
               className={`mb-4 ${message.role === "user" ? "ml-12" : "mr-12"}`}
             >
               <div
-                className={`
-                  p-4 rounded-lg border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]
+                className={`p-4 rounded-lg border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]
                   ${
                     message.role === "user"
                       ? "bg-yellow-400 ml-auto"
                       : "bg-cyan-100"
-                  }
-                `}
+                  }`}
               >
                 <div className="flex items-center mb-2">
                   {message.role === "assistant" ? (
@@ -99,6 +167,7 @@ function ChatInterface() {
               </div>
             </div>
           ))}
+          <div ref={messagesEndRef} />
         </div>
 
         <form
@@ -111,13 +180,15 @@ function ChatInterface() {
             className="flex-1 p-4 border-4 border-black h-14 text-sm md:text-lg font-medium rounded-lg focus-visible:ring-cyan-500"
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            disabled={loading}
           />
           <Button
             type="submit"
-            className="h-14 flex items-center justify-center p-4  text-lg font-bold bg-cyan-500 hover:bg-cyan-600 text-white border-4 border-black rounded-lg shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-y-1 hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all"
+            className="h-14 flex items-center justify-center p-4 text-lg font-bold bg-cyan-500 hover:bg-cyan-600 text-white border-4 border-black rounded-lg shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-y-1 hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all"
+            disabled={loading}
           >
             <Send className="h-5 w-5 mr-2" />
-            Send
+            {loading ? "Loading..." : "Send"}
           </Button>
         </form>
       </div>

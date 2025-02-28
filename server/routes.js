@@ -7,13 +7,17 @@ import {
   redis,
 } from "./utils/helpers.js";
 import { exec } from "child_process";
-import { streamText } from "ai";
+import { streamText, embed } from "ai";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { openai } from "@ai-sdk/openai";
 
+import { config } from "dotenv";
+
 const router = Router();
+
+config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -65,12 +69,10 @@ router.post("/process", async (req, res) => {
             "❌ Repomix execution failed:",
             stderr || error.message
           );
-          return res
-            .status(500)
-            .json({
-              error: "Repomix failed",
-              details: stderr || error.message,
-            });
+          return res.status(500).json({
+            error: "Repomix failed",
+            details: stderr || error.message,
+          });
         }
 
         console.log("✅ Repomix completed. Generating embeddings...");
@@ -121,32 +123,47 @@ router.post("/query", async (req, res) => {
       .json({ error: "Query and project name are required" });
 
   console.log(`🔍 Searching for: ${query} in project: ${projectName}`);
-
   try {
-    // Step 1: Retrieve relevant code snippets from Pinecone
+    // Step 1: Generate embedding for the query
+    const { embedding } = await embed({
+      model: openai.embedding("text-embedding-3-large"),
+      value: query,
+    });
+    console.log("Embedding:", embedding);
+
+    // Step 2: Query Pinecone index
     const index = pc.index(projectName);
     const queryResponse = await index.query({
-      vector: Array(3072).fill(0), // Placeholder vector (replace with proper embedding)
+      vector: embedding,
       topK: 5,
       includeMetadata: true,
     });
+    console.log("Query Response:", JSON.stringify(queryResponse, null, 2));
 
-    const relevantDocs = queryResponse.matches
-      .map((match) => match.metadata.content)
-      .join("\n\n");
-
-    if (!relevantDocs) {
+    // Step 3: Extract relevant documents from matches
+    const matches = queryResponse.matches;
+    if (!matches || matches.length === 0) {
       return res.status(404).json({ error: "No relevant code found" });
     }
 
-    // Step 2: Stream AI-generated response using OpenAI & ai-sdk
-    const responseStream = await streamText({
-      model: openai("gpt-4o-mini"),
+    // Extract content from metadata (adjust based on actual structure)
+    const relevantDocs = matches
+      .map((match) => match.metadata?.text || "No content available")
+      .join("\n\n");
+    console.log("Relevant Docs:", relevantDocs);
+
+    if (!relevantDocs.trim()) {
+      return res.status(404).json({ error: "No relevant code found" });
+    }
+
+    // Step 4: Stream AI-generated response using OpenAI & ai-sdk
+    const responseStream = streamText({
+      model: openai("gpt-4o"),
       messages: [
         {
           role: "system",
           content:
-            "You are an AI assistant helping with code search. Provide concise and clear explanations in markdown format.",
+            "You are an AI assistant helping with codebase exploration & explaination by providing relevant code snippets and details. Provide concise and clear explanations in markdown format.",
         },
         {
           role: "user",
@@ -155,17 +172,10 @@ router.post("/query", async (req, res) => {
       ],
     });
 
-    // Step 3: Stream response back to client
-    responseStream
-      .toTextStreamResponse({
-        headers: { "Content-Type": "text/event-stream" },
-      })
-      .then((streamResponse) => {
-        res
-          .status(streamResponse.status)
-          .set(streamResponse.headers)
-          .send(streamResponse.body);
-      });
+    console.log(responseStream);
+
+    // Return the streamed response
+    return responseStream.pipeDataStreamToResponse(res);
   } catch (error) {
     console.error("❌ Query processing error:", error.message);
     return res.status(500).json({ error: "Failed to process query" });

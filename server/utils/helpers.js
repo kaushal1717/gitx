@@ -39,7 +39,7 @@ export const generateEmbeddings = async (textChunks) => {
       embeddingsArray.push({
         id: `chunk-${i}`,
         values: response.data[0].embedding,
-        metadata: { chunk_index: i },
+        metadata: { chunk_index: i, text: textChunks[i].pageContent },
       });
     } catch (error) {
       console.error(
