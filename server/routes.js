@@ -43,11 +43,13 @@ router.post("/process", async (req, res) => {
     `${userName}-${projectName}-output.txt`
   );
 
+  const key = `${userName}-${projectName}`;
+
   try {
     // Check if the index already exists in Redis
     let cached;
     try {
-      cached = await redis.get(projectName);
+      cached = await redis.get(key);
     } catch (redisError) {
       console.warn(
         "⚠️ Redis lookup failed, skipping cache check:",
@@ -98,7 +100,7 @@ router.post("/process", async (req, res) => {
           const embeddingsArray = await generateEmbeddings(textChunks);
 
           // Store embeddings in Pinecone and cache the index in Redis
-          await storeEmbeddingsInPinecone(projectName, embeddingsArray);
+          await storeEmbeddingsInPinecone(key, embeddingsArray);
 
           const uploadResult = await UploadToS3(outputFilePath);
 
@@ -132,7 +134,8 @@ router.post("/process", async (req, res) => {
 });
 
 router.post("/query", async (req, res) => {
-  const { query, projectName } = req.body;
+  const { query, projectName, userName } = req.body;
+  const key = `${userName}-${projectName}`;
   if (!query || !projectName)
     return res
       .status(400)
@@ -145,8 +148,8 @@ router.post("/query", async (req, res) => {
     const existingIndexes = await pc.listIndexes();
     const indexNames = existingIndexes.indexes.map((index) => index.name);
 
-    if (!indexNames.includes(projectName)) {
-      console.warn(`🚨 Index "${projectName}" not found. Ending session.`);
+    if (!indexNames.includes(key)) {
+      console.warn(`🚨 Index "${key}" not found. Ending session.`);
       return res.status(307).json({
         redirect: "/", // Redirect to homepage
         message: "Session expired. Redirecting to home page.",
@@ -162,7 +165,7 @@ router.post("/query", async (req, res) => {
     console.log("Embedding:", embedding);
 
     // Step 3: Query Pinecone index
-    const index = pc.index(projectName);
+    const index = pc.index(key);
     const queryResponse = await index.query({
       vector: embedding,
       topK: 5,
@@ -192,7 +195,7 @@ router.post("/query", async (req, res) => {
         {
           role: "system",
           content:
-            "You are an AI assistant helping with codebase exploration & explanation. Provide concise and clear explanations in markdown format. Give separate markdown for raw text and code snippet",
+            "You are an AI assistant helping with codebase exploration & explanation. Provide concise and clear explanations in proper markdown format.",
         },
         {
           role: "user",

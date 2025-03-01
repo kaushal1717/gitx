@@ -10,6 +10,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { nord } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { Download } from "lucide-react";
 import { toast } from "sonner";
+import { Loader } from "lucide-react";
 
 function ChatInterface() {
   const navigate = useNavigate();
@@ -21,12 +22,13 @@ function ChatInterface() {
   const userName = repoUrl.split("#")[0];
   const messagesEndRef = useRef(null);
 
-  const { messages, input, handleInputChange, handleSubmit } = useChat({
+  const { messages, input, handleInputChange, handleSubmit, status } = useChat({
     api: `${import.meta.env.VITE_BACKEND_URL}/api/query`,
     experimental_prepareRequestBody: () => {
       return {
         query: input,
         projectName,
+        userName,
       };
     },
     onResponse: (response) => {
@@ -199,10 +201,16 @@ function ChatInterface() {
           />
           <Button
             type="submit"
+            disabled={status === "streaming" || !input}
             className="h-14 flex items-center justify-center p-4 text-lg font-bold bg-cyan-500 hover:bg-cyan-600 text-white border-4 border-black rounded-lg shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-y-1 hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all"
           >
-            <Send className="h-5 w-5 mr-2" />
-            Send
+            {status === "streaming" || status === "submitted" ? (
+              <Loader className="h-5 w-5 animate-spin" />
+            ) : (
+              <span className="flex gap-2 items-center">
+                <Send className="h-5 w-5 mr-2" /> Send
+              </span>
+            )}
           </Button>
         </form>
       </div>
