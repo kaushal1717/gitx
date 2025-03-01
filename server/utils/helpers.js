@@ -4,13 +4,23 @@ import { config } from "dotenv";
 import { Redis } from "@upstash/redis";
 import { google } from "@ai-sdk/google";
 import { embed } from "ai";
-
+import { S3, PutObjectCommand } from "@aws-sdk/client-s3";
+import fs from "fs";
+import path from "path";
 config();
 
 export const pc = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
 export const redis = new Redis({
   url: process.env.UPSTASH_REDIS_URL,
   token: process.env.UPSTASH_REDIS_TOKEN,
+});
+
+const s3 = new S3({
+  credentials: {
+    accessKeyId: process.env.ACCESS_KEY_ID,
+    secretAccessKey: process.env.SECRET_ACCESS_KEY,
+  },
+  region: "ap-south-1",
 });
 
 export const chunkText = async (text, chunkSize = 8000, chunkOverlap = 200) => {
@@ -147,3 +157,21 @@ export const listen = async () => {
 setInterval(() => {
   listen().catch((error) => console.error("❌ Error in listening:", error));
 }, 30 * 60 * 1000);
+
+export const UploadToS3 = async (filePath) => {
+  const fileStream = fs.createReadStream(filePath);
+  const params = {
+    Bucket: process.env.BUCKET_NAME,
+    Key: path.basename(filePath),
+    Body: fileStream,
+  };
+
+  try {
+    const command = new PutObjectCommand(params);
+    await s3.send(command);
+    return { success: true, message: "File uploaded successfully" };
+  } catch (error) {
+    console.error("❌ Error uploading file to S3:", error.message);
+    return { success: false, message: "Failed to upload file" };
+  }
+};

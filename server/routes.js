@@ -5,6 +5,7 @@ import {
   pc,
   storeEmbeddingsInPinecone,
   redis,
+  UploadToS3,
 } from "./utils/helpers.js";
 import { exec } from "child_process";
 import { streamText, embed } from "ai";
@@ -33,8 +34,12 @@ router.post("/process", async (req, res) => {
     return res.status(400).json({ error: "GitHub repo URL is required" });
 
   console.log("Processing repo:", repoUrl);
+  const userName = repoUrl.split("/")[3];
   const projectName = repoUrl.split("/")[4]; // Extracts project name from URL
-  const outputFilePath = path.join(tempDir, `${projectName}-output.txt`);
+  const outputFilePath = path.join(
+    tempDir,
+    `${userName}-${projectName}-output.txt`
+  );
 
   try {
     // Check if the index already exists in Redis
@@ -93,6 +98,15 @@ router.post("/process", async (req, res) => {
           // Store embeddings in Pinecone and cache the index in Redis
           await storeEmbeddingsInPinecone(projectName, embeddingsArray);
 
+          const uploadResult = await UploadToS3(outputFilePath);
+
+          if (!uploadResult.success) {
+            return res.json({
+              success: false,
+              message: uploadResult.message,
+              status: 400,
+            });
+          }
           // Delete local file
           fs.unlinkSync(outputFilePath);
 
@@ -176,7 +190,7 @@ router.post("/query", async (req, res) => {
         {
           role: "system",
           content:
-            "You are an AI assistant helping with codebase exploration & explanation. Provide concise and clear explanations in markdown format. Give separate markdown for raw text and code snippet ",
+            "You are an AI assistant helping with codebase exploration & explanation. Provide concise and clear explanations in markdown format. Give separate markdown for raw text and code snippet",
         },
         {
           role: "user",
