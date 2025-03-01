@@ -8,13 +8,17 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { nord } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { Download } from "lucide-react";
+import { toast } from "sonner";
 
 function ChatInterface() {
   const navigate = useNavigate();
   const location = useLocation();
   const params = new URLSearchParams(location.search);
   const repoUrl = params.get("repo") || "Unknown Repository";
-  const projectName = repoUrl;
+  const projectName = repoUrl.split("#")[1];
+
+  const userName = repoUrl.split("#")[0];
   const messagesEndRef = useRef(null);
 
   const { messages, input, handleInputChange, handleSubmit } = useChat({
@@ -24,6 +28,12 @@ function ChatInterface() {
         query: input,
         projectName,
       };
+    },
+    onResponse: (response) => {
+      if (response.status === 307) {
+        toast.error("Session Expired");
+        navigate("/");
+      }
     },
   });
 
@@ -42,15 +52,51 @@ function ChatInterface() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  const handleFileDownload = async () => {
+    try {
+      const response = await fetch(
+        `${
+          import.meta.env.VITE_BACKEND_URL
+        }/api/get-url?fileName=${encodeURIComponent(
+          `${userName}-${projectName}-output.txt`
+        )}`
+      );
+
+      if (!response.ok) {
+        if (response.status === 400) {
+          toast.error("Session Expired");
+          navigate("/");
+        } else {
+          toast.error("Error Downloading File");
+        }
+        return;
+      }
+
+      const { url } = await response.json();
+
+      window.location.href = url;
+    } catch (error) {
+      console.error("Download error:", error);
+      toast.error("Error downloading file");
+    }
+  };
+
   return (
     <div className="container py-8 max-w-4xl mx-auto">
-      <div className="mb-6">
+      <div className="mb-6 flex gap-4">
         <Button
           onClick={() => navigate("/")}
           className="font-bold flex items-center p-3 bg-yellow-400 hover:bg-yellow-500 text-black border-4 border-black rounded-lg shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-y-1 hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all"
         >
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to Home
+        </Button>
+        <Button
+          onClick={handleFileDownload}
+          className="font-bold flex items-center p-3 bg-green-400 hover:bg-green-500 text-black border-4 border-black rounded-lg shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-y-1 hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all"
+        >
+          <Download className="h-4 w-4" />
+          Download llm txt
         </Button>
       </div>
 
@@ -72,8 +118,8 @@ function ChatInterface() {
                 <span className="font-bold">GitX Assistant</span>
               </div>
               <p className="font-medium">
-                I&#39;ve processed the repository at {repoUrl}. What would you
-                like to know about this codebase?
+                I&#39;ve processed the repository at {projectName}. What would
+                you like to know about this codebase?
               </p>
             </div>
           </div>

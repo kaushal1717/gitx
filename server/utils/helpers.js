@@ -4,9 +4,15 @@ import { config } from "dotenv";
 import { Redis } from "@upstash/redis";
 import { google } from "@ai-sdk/google";
 import { embed } from "ai";
-import { S3, PutObjectCommand } from "@aws-sdk/client-s3";
+import {
+  S3,
+  PutObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+} from "@aws-sdk/client-s3";
 import fs from "fs";
 import path from "path";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 config();
 
 export const pc = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
@@ -173,5 +179,36 @@ export const UploadToS3 = async (filePath) => {
   } catch (error) {
     console.error("❌ Error uploading file to S3:", error.message);
     return { success: false, message: "Failed to upload file" };
+  }
+};
+
+export const getPresignedUrl = async (fileName) => {
+  const command = new GetObjectCommand({
+    Bucket: process.env.BUCKET_NAME,
+    Key: fileName,
+  });
+
+  const signedUrl = await getSignedUrl(s3, command, {
+    expiresIn: 60 * 60, // 1 hour
+  });
+
+  return signedUrl;
+};
+
+export const checkFileExists = async (fileName) => {
+  try {
+    const command = new HeadObjectCommand({
+      Bucket: process.env.BUCKET_NAME,
+      Key: fileName,
+    });
+
+    await s3.send(command); // If the file exists, this will succeed
+    return true;
+  } catch (error) {
+    if (error.name === "NotFound" || error.$metadata?.httpStatusCode === 403) {
+      return false;
+    }
+
+    throw error;
   }
 };

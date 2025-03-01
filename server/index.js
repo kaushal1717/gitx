@@ -8,7 +8,7 @@ config();
 const app = express();
 app.use(
   cors({
-    origin: "https://gitx-codebase.netlify.app", // Allow only your frontend
+    origin: ["https://gitx-codebase.netlify.app", "http://localhost:5173"], // Allow only your frontend
     methods: "GET,POST,PUT,DELETE,OPTIONS",
     allowedHeaders: "Content-Type,Authorization",
     credentials: true,

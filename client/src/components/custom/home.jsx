@@ -17,7 +17,7 @@ function Home() {
 
     setLoading(true);
     const projectName = repoUrl.split("/")[4];
-
+    const userName = repoUrl.split("/")[3];
     try {
       const response = await fetch(
         `${import.meta.env.VITE_BACKEND_URL}/api/process`,
@@ -34,7 +34,9 @@ function Home() {
         throw new Error(result.error || "Processing failed");
       }
 
-      navigate(`/chat?repo=${encodeURIComponent(projectName)}`);
+      navigate(
+        `/chat?repo=${encodeURIComponent(userName + "#" + projectName)}`
+      );
     } catch (err) {
       setError(err.message || "Something went wrong");
     }

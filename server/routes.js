@@ -6,6 +6,8 @@ import {
   storeEmbeddingsInPinecone,
   redis,
   UploadToS3,
+  getPresignedUrl,
+  checkFileExists,
 } from "./utils/helpers.js";
 import { exec } from "child_process";
 import { streamText, embed } from "ai";
@@ -204,6 +206,27 @@ router.post("/query", async (req, res) => {
   } catch (error) {
     console.error("❌ Query processing error:", error.message);
     return res.status(500).json({ error: "Failed to process query" });
+  }
+});
+
+router.get("/get-url", async (req, res) => {
+  try {
+    const { fileName } = req.query; // Expecting fileName as query param
+
+    if (!fileName) {
+      return res.status(400).json({ error: "fileName is required" });
+    }
+    const checkFile = await checkFileExists(fileName);
+    if (!checkFile) {
+      console.log("File does not exist in bucket");
+      return res.status(400).json({ error: "file does not exist in bucket" });
+    }
+
+    const url = await getPresignedUrl(fileName);
+    res.json({ url });
+  } catch (error) {
+    console.error("Error generating presigned URL:", error);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 
