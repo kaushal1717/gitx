@@ -102,7 +102,7 @@ export const storeEmbeddingsInPinecone = async (indexName, embeddingsArray) => {
     console.log("✅ Embeddings stored in Pinecone.");
 
     try {
-      await redis.set(indexName, "cached", { ex: 3600 });
+      await redis.set(indexName, "cached");
       console.log(`✅ Cached index "${indexName}" in Redis.`);
     } catch (redisError) {
       console.warn("⚠️ Failed to cache in Redis:", redisError.message);
@@ -112,57 +112,6 @@ export const storeEmbeddingsInPinecone = async (indexName, embeddingsArray) => {
     throw new Error("Failed to store embeddings in Pinecone");
   }
 };
-
-export const listen = async () => {
-  try {
-    console.log("🧹 Checking for expired Redis keys...");
-
-    const allKeys = await redis.keys("*");
-
-    if (!allKeys.length) {
-      console.log("✅ No keys found in Redis.");
-      return;
-    }
-
-    for (const key of allKeys) {
-      const value = await redis.get(key);
-
-      if (value === null) {
-        console.log(
-          `🗑️ Key "${key}" has expired, removing from Redis and Pinecone...`
-        );
-
-        await redis.del(key);
-
-        try {
-          const indexExists = (await pc.listIndexes()).indexes.some(
-            (index) => index.name === key
-          );
-
-          if (indexExists) {
-            await pc.deleteIndex(key);
-            console.log(`✅ Deleted Pinecone index: "${key}"`);
-          } else {
-            console.log(`⚠️ Pinecone index "${key}" does not exist.`);
-          }
-        } catch (pineconeError) {
-          console.error(
-            `❌ Failed to delete Pinecone index "${key}":`,
-            pineconeError.message
-          );
-        }
-      }
-    }
-
-    console.log("✅ Cleanup cycle completed.");
-  } catch (error) {
-    console.error("❌ Redis cleanup error:", error.message);
-  }
-};
-
-setInterval(() => {
-  listen().catch((error) => console.error("❌ Error in listening:", error));
-}, 30 * 60 * 1000);
 
 export const UploadToS3 = async (filePath) => {
   const fileStream = fs.createReadStream(filePath);
