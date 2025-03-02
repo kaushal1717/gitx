@@ -5,12 +5,8 @@ import redis
 from pinecone import Pinecone
 
 # Initialize Redis
-redis_client = redis.Redis(
-  host=os.getenv("UPSTASH_REDIS_URL"),
-  port=6379,
-  password=os.getenv("UPSTASH_REDIS_TOKEN"),
-  ssl=True
-)
+UPSTASH_REDIS_URL = os.getenv("UPSTASH_REDIS_URL")  # Should be in the format rediss://:<password>@<host>:6379
+redis_client = redis.Redis.from_url(UPSTASH_REDIS_URL, decode_responses=True)
 
 # Initialize Pinecone
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
@@ -37,9 +33,11 @@ def lambda_handler(event, context):
         except Exception as e:
             print(f"Error deleting Redis key: {e}")
 
-        # Delete from Pinecone
+
         try:
-            if user_project in pc.list_indexes():
+            indexes = pc.list_indexes()
+            index_names = [index["name"] for index in indexes]
+            if user_project in index_names:
                 pc.delete_index(user_project)
                 print(f"Deleted Pinecone index: {user_project}")
             else:

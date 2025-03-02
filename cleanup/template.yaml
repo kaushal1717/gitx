@@ -31,10 +31,9 @@ Resources:
         - AmazonS3ReadOnlyAccess
       Environment:
         Variables:
-          UPSTASH_REDIS_URL: "https://prompt-clam-33566.upstash.io"
-          UPSTASH_REDIS_TOKEN: "AYMeAAIjcDFjMTEyOWE4NTM5Nzg0ODQ3YTA4OTA4OGMzZjUyYzQ5YXAxMA"
+          UPSTASH_REDIS_URL: "rediss://:AYMeAAIjcDFjMTEyOWE4NTM5Nzg0ODQ3YTA4OTA4OGMzZjUyYzQ5YXAxMA@prompt-clam-33566.upstash.io:6379"
           PINECONE_API_KEY: "pcsk_5cGDFT_Fm26vCJe2xwsYw294TKRCj4hdEs9CKVPM5BK8AQ518yzJthBqTYDBBRWrYmc3GR"
-          PINECONE_ENV: "us-east-1"
+          PINECONE_ENV: "us-east-1-aws"
 
 Outputs:
   CleanupFunction:
