@@ -2,7 +2,7 @@ import json
 import os
 import re
 import redis
-import pinecone
+from pinecone import Pinecone
 
 # Initialize Redis
 redis_client = redis.Redis(
@@ -13,7 +13,7 @@ redis_client = redis.Redis(
 )
 
 # Initialize Pinecone
-pinecone.init(api_key=os.getenv("PINECONE_API_KEY"), environment=os.getenv("PINECONE_ENV"))
+pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 
 def lambda_handler(event, context):
     print("Received event:", json.dumps(event, indent=2))
@@ -39,8 +39,8 @@ def lambda_handler(event, context):
 
         # Delete from Pinecone
         try:
-            if user_project in pinecone.list_indexes():
-                pinecone.delete_index(user_project)
+            if user_project in pc.list_indexes():
+                pc.delete_index(user_project)
                 print(f"Deleted Pinecone index: {user_project}")
             else:
                 print(f"Pinecone index {user_project} not found")
