@@ -1,0 +1,42 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  cleanup
+
+  Sample SAM Template for cleanup
+
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    Timeout: 3
+    MemorySize: 128
+
+    # You can add LoggingConfig parameters such as the Logformat, Log Group, and SystemLogLevel or ApplicationLogLevel. Learn more here https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-resource-function.html#sam-function-loggingconfig.
+    LoggingConfig:
+      LogFormat: JSON
+
+Resources:
+  CleanupFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Zip # Use ZIP packaging
+      FunctionName: CleanupFunction
+      Runtime: python3.9
+      Handler: app.lambda_handler
+      CodeUri: cleanup/
+      MemorySize: 128
+      Timeout: 10
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - AmazonS3ReadOnlyAccess
+      Environment:
+        Variables:
+          UPSTASH_REDIS_URL: "https://prompt-clam-33566.upstash.io"
+          UPSTASH_REDIS_TOKEN: "AYMeAAIjcDFjMTEyOWE4NTM5Nzg0ODQ3YTA4OTA4OGMzZjUyYzQ5YXAxMA"
+          PINECONE_API_KEY: "pcsk_5cGDFT_Fm26vCJe2xwsYw294TKRCj4hdEs9CKVPM5BK8AQ518yzJthBqTYDBBRWrYmc3GR"
+          PINECONE_ENV: "us-east-1"
+
+Outputs:
+  CleanupFunction:
+    Description: Cleanup Lambda Function ARN
+    Value: !GetAtt CleanupFunction.Arn
