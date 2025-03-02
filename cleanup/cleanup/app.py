@@ -23,7 +23,7 @@ def lambda_handler(event, context):
         s3_key = record["s3"]["object"]["key"]
         
         # Extract user-project name from file name
-        match = re.match(r"([\w\d]+)-([\w\d]+)-output\.txt", s3_key)
+        match = re.match(r"([\w\d]+)-([\w\d-]+)-output\.txt", s3_key)
         if not match:
             print(f"Skipping unrecognized file format: {s3_key}")
             continue
